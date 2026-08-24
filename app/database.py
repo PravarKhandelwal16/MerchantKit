@@ -1,6 +1,5 @@
 import sqlite3
 from pathlib import Path
-from typing import Generator
 from app.config import settings, BASE_DIR
 
 

@@ -19,7 +19,7 @@ class Settings(BaseModel):
         default=os.getenv("OLLAMA_BASE_URL", "http://localhost:11434")
     )
     ollama_model: str = Field(
-        default=os.getenv("OLLAMA_MODEL", "qwen2.5:7b")
+        default=os.getenv("OLLAMA_MODEL", "qwen3:8b")
     )
 
 
