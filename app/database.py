@@ -180,9 +180,20 @@ def search_products(
             sql += " AND stock > 0"
             
         if query:
-            sql += " AND (name LIKE ? OR description LIKE ?)"
-            like_query = f"%{query}%"
-            params.extend([like_query, like_query])
+            # Split the query into individual words so that "wireless mouse"
+            # matches a product whose name contains "Wireless" AND/OR "mouse"
+            # separately. Each word is searched case-insensitively.
+            words = [w.strip() for w in query.split() if w.strip()]
+            if words:
+                word_clauses = []
+                for word in words:
+                    word_clauses.append(
+                        "(lower(name) LIKE lower(?) OR lower(description) LIKE lower(?))"
+                    )
+                    like_w = f"%{word}%"
+                    params.extend([like_w, like_w])
+                # At least one word must match
+                sql += " AND (" + " OR ".join(word_clauses) + ")"
             
         if category:
             sql += " AND category = ?"

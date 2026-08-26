@@ -1,10 +1,11 @@
-from typing import Dict, Any, Optional
+from typing import Dict, Any, List, Optional
 from contextlib import asynccontextmanager
 from fastapi import FastAPI, Response
 from pydantic import BaseModel, Field
 from app.config import settings
 from app.database import init_db
 from app.executor import execute_tool
+from app.agent import BuyerAgent, AgentResult
 
 
 @asynccontextmanager
@@ -48,3 +49,86 @@ def api_execute_tool(request: ToolExecutionRequest, response: Response):
             response.status_code = 400
             
     return result
+
+
+# ---------------------------------------------------------------------------
+# Agent Chat endpoint
+# ---------------------------------------------------------------------------
+
+class AgentChatRequest(BaseModel):
+    message: str = Field(..., min_length=1, description="Natural-language shopping goal for the AI buyer agent")
+
+
+class ToolCallSummary(BaseModel):
+    tool_name: str
+    success: bool
+    error: Optional[str] = None
+
+
+class AgentChatResponse(BaseModel):
+    success: bool
+    message: str
+    stop_reason: str
+    tool_calls_made: int
+    tool_call_log: List[ToolCallSummary]
+
+
+def _build_tool_call_log(history: list) -> List[ToolCallSummary]:
+    """Extract a structured tool-call summary from the agent history."""
+    import json
+    log: List[ToolCallSummary] = []
+    # Pair each assistant turn (with tool_calls) with the following tool result messages
+    i = 0
+    while i < len(history):
+        entry = history[i]
+        if entry.get("role") == "assistant" and entry.get("tool_calls"):
+            for raw_call in entry["tool_calls"]:
+                tool_name = raw_call.get("function", {}).get("name", "unknown")
+                # The corresponding tool result follows immediately
+                i += 1
+                if i < len(history) and history[i].get("role") == "tool":
+                    try:
+                        result = json.loads(history[i]["content"])
+                        log.append(ToolCallSummary(
+                            tool_name=tool_name,
+                            success=result.get("success", False),
+                            error=result.get("error"),
+                        ))
+                    except Exception:
+                        log.append(ToolCallSummary(tool_name=tool_name, success=False, error="Could not parse result"))
+                else:
+                    log.append(ToolCallSummary(tool_name=tool_name, success=False, error="No result received"))
+                    i -= 1  # didn't consume a tool message, stay
+        i += 1
+    return log
+
+
+@app.post("/agent/chat", response_model=AgentChatResponse)
+def agent_chat(request: AgentChatRequest) -> AgentChatResponse:
+    """
+    Send a natural-language shopping goal to the AI buyer agent.
+
+    The agent autonomously uses registered tools (search, cart, order) to
+    fulfil the request. All tool calls go through the secure gateway —
+    the model cannot access the database directly.
+    """
+    try:
+        agent = BuyerAgent()
+        result: AgentResult = agent.run(request.message)
+        tool_log = _build_tool_call_log(result.history)
+        return AgentChatResponse(
+            success=result.success,
+            message=result.final_response,
+            stop_reason=result.stop_reason,
+            tool_calls_made=result.tool_calls_made,
+            tool_call_log=tool_log,
+        )
+    except Exception:
+        # Never expose stack traces to the client
+        return AgentChatResponse(
+            success=False,
+            message="An internal error occurred. Please try again.",
+            stop_reason="error",
+            tool_calls_made=0,
+            tool_call_log=[],
+        )
