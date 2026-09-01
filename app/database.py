@@ -102,8 +102,24 @@ def init_db() -> None:
                 FOREIGN KEY (product_id) REFERENCES products (product_id)
             );
         """)
-        
+        # Create audit_logs table — append-only, never updated by normal logging
+        conn.execute("""
+            CREATE TABLE IF NOT EXISTS audit_logs (
+                id        INTEGER PRIMARY KEY AUTOINCREMENT,
+                timestamp TEXT    NOT NULL,
+                actor     TEXT    NOT NULL,
+                action    TEXT    NOT NULL,
+                arguments TEXT,
+                result    TEXT,
+                policy_decision TEXT,
+                reason    TEXT,
+                success   INTEGER NOT NULL DEFAULT 1,
+                error_code TEXT
+            );
+        """)
+
         conn.commit()
+
     finally:
         conn.close()
 

@@ -179,7 +179,7 @@ class TestDispatchToolCall:
             mock_exec.return_value = {"success": True, "tool": "get_product", "data": {"product_id": "p1"}}
             req = ToolCallRequest(tool_name="get_product", arguments={"product_id": "p1"})
             result = dispatch_tool_call(req)
-            mock_exec.assert_called_once_with("get_product", {"product_id": "p1"})
+            mock_exec.assert_called_once_with("get_product", {"product_id": "p1"}, actor="api")
             assert result.success is True
             assert result.data == {"product_id": "p1"}
 

@@ -182,14 +182,23 @@ def parse_tool_calls(message: Dict[str, Any]) -> List[ToolCallRequest]:
 # Public: dispatch a tool call through the secure gateway
 # ---------------------------------------------------------------------------
 
-def dispatch_tool_call(request: ToolCallRequest) -> ToolCallResult:
+def dispatch_tool_call(
+    request: ToolCallRequest,
+    actor: str = "api",
+) -> ToolCallResult:
     """
     Route a ToolCallRequest through execute_tool() and return a ToolCallResult.
 
     All security checks (unknown tool, malformed arguments, execution errors)
     are delegated to execute_tool — this function never bypasses the gateway.
+
+    Parameters
+    ----------
+    actor:
+        Identifier recorded in the audit log for this call.
+        Pass "buyer_agent" when called from the autonomous agent loop.
     """
-    result = execute_tool(request.tool_name, request.arguments)
+    result = execute_tool(request.tool_name, request.arguments, actor=actor)
 
     if result.get("success"):
         return ToolCallResult(

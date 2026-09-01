@@ -15,7 +15,7 @@ def setup_teardown_db():
     conn.commit()
     conn.close()
     
-    product = Product(product_id="prod_tool_1", name="Tool Product", price=15.0, category="Test", stock=10)
+    product = Product(product_id="prod_tool_1", name="Tool Product", price=15.0, category="mouse", stock=10)
     insert_product(product)
     yield
 

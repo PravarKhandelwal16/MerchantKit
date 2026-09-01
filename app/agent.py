@@ -145,7 +145,7 @@ class BuyerAgent:
             parsed_calls = parse_tool_calls({"tool_calls": response.tool_calls})
 
             for call_request in parsed_calls:
-                tool_result = dispatch_tool_call(call_request)
+                tool_result = dispatch_tool_call(call_request, actor="buyer_agent")
                 tool_msg = format_tool_result_message(tool_result)
                 history.append(tool_msg)
                 tool_calls_made += 1
