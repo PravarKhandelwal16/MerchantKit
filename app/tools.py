@@ -57,6 +57,10 @@ class GetOrderInput(BaseModel):
     order_id: str = Field(..., description="The ID of the order to fetch")
 
 
+class CreatePaymentOrderInput(BaseModel):
+    order_id: str = Field(..., description="The ID of the confirmed internal order to create a payment for")
+
+
 create_cart_tool = ToolDefinition(
     name="create_cart",
     description="Create a new empty shopping cart.",
@@ -106,6 +110,13 @@ get_order_tool = ToolDefinition(
     output_structure="A structured Order object if found, or None if not found."
 )
 
+create_payment_order_tool = ToolDefinition(
+    name="create_payment_order",
+    description="Creates a Razorpay payment order for an existing internal order.",
+    input_schema=CreatePaymentOrderInput,
+    output_structure="A dictionary containing payment order details including razorpay_order_id."
+)
+
 # Registry of available tools
 TOOLS = {
     search_products_tool.name: search_products_tool,
@@ -117,4 +128,5 @@ TOOLS = {
     remove_from_cart_tool.name: remove_from_cart_tool,
     create_order_tool.name: create_order_tool,
     get_order_tool.name: get_order_tool,
+    create_payment_order_tool.name: create_payment_order_tool,
 }

@@ -86,6 +86,7 @@ def test_empty_tool_name():
 
 def test_ensuring_only_registered_tools_can_execute():
     # TOOL_HANDLERS is a hardcoded dict that maps tool names to callables
-    assert len(TOOL_HANDLERS) == 9
+    assert len(TOOL_HANDLERS) == 10
+
     assert "search_products" in TOOL_HANDLERS
     assert "get_product" in TOOL_HANDLERS

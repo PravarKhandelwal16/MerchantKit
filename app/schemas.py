@@ -49,4 +49,7 @@ class Order(BaseModel):
     currency: str = Field(default="USD", min_length=1)
     status: str = Field(..., min_length=1)
     created_at: str = Field(..., min_length=1)
+    payment_provider: Optional[str] = None
+    razorpay_order_id: Optional[str] = None
+    payment_status: Optional[str] = None
     items: List[OrderItem] = Field(default_factory=list)

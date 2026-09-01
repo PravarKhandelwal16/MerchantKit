@@ -85,6 +85,9 @@ def init_db() -> None:
                 currency TEXT NOT NULL,
                 status TEXT NOT NULL,
                 created_at TEXT NOT NULL,
+                payment_provider TEXT,
+                razorpay_order_id TEXT,
+                payment_status TEXT,
                 FOREIGN KEY (cart_id) REFERENCES carts (cart_id)
             );
         """)
@@ -117,6 +120,14 @@ def init_db() -> None:
                 error_code TEXT
             );
         """)
+
+        # Schema migrations for existing databases
+        for col in ["payment_provider", "razorpay_order_id", "payment_status"]:
+            try:
+                conn.execute(f"ALTER TABLE orders ADD COLUMN {col} TEXT;")
+            except sqlite3.OperationalError:
+                # Column already exists
+                pass
 
         conn.commit()
 
@@ -392,7 +403,7 @@ def fetch_order(order_id: str) -> Optional[Order]:
     conn = get_db_connection()
     try:
         row = conn.execute(
-            "SELECT order_id, cart_id, total_amount, currency, status, created_at FROM orders WHERE order_id = ?",
+            "SELECT order_id, cart_id, total_amount, currency, status, created_at, payment_provider, razorpay_order_id, payment_status FROM orders WHERE order_id = ?",
             (order_id,)
         ).fetchone()
         
@@ -446,6 +457,19 @@ def create_order_transaction(order: Order, items: List[OrderItem]) -> None:
     except Exception as exc:
         conn.rollback()
         raise exc
+    finally:
+        conn.close()
+
+
+def update_payment_details(order_id: str, provider: str, razorpay_order_id: str, payment_status: str) -> None:
+    """Update payment metadata for an existing order."""
+    conn = get_db_connection()
+    try:
+        conn.execute(
+            "UPDATE orders SET payment_provider = ?, razorpay_order_id = ?, payment_status = ? WHERE order_id = ?",
+            (provider, razorpay_order_id, payment_status, order_id)
+        )
+        conn.commit()
     finally:
         conn.close()
 

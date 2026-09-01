@@ -3,7 +3,8 @@ from app.tools import TOOLS, search_products_tool, get_product_tool
 def test_tools_exist():
     assert "search_products" in TOOLS
     assert "get_product" in TOOLS
-    assert len(TOOLS) == 9
+    assert len(TOOLS) == 10
+
 
 def test_search_products_schema():
     tool = TOOLS["search_products"]

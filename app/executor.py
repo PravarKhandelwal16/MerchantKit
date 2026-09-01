@@ -10,6 +10,7 @@ from app.cart import (
     remove_from_cart,
 )
 from app.order import create_order_from_cart, get_order, GuardrailViolation
+from app.payment import create_payment_order
 from app.audit import audit_logger, APPROVED, REJECTED, NA
 
 # Central tool registry mapping allowed tool names to their actual handlers.
@@ -24,6 +25,7 @@ TOOL_HANDLERS: Dict[str, Callable] = {
     "remove_from_cart": remove_from_cart,
     "create_order": create_order_from_cart,
     "get_order": get_order,
+    "create_payment_order": create_payment_order,
 }
 
 

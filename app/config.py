@@ -1,4 +1,5 @@
 import os
+from typing import Optional
 from pathlib import Path
 from dotenv import load_dotenv
 from pydantic import BaseModel, Field
@@ -20,6 +21,12 @@ class Settings(BaseModel):
     )
     ollama_model: str = Field(
         default=os.getenv("OLLAMA_MODEL", "qwen3:8b")
+    )
+    razorpay_key_id: Optional[str] = Field(
+        default=os.getenv("RAZORPAY_KEY_ID")
+    )
+    razorpay_key_secret: Optional[str] = Field(
+        default=os.getenv("RAZORPAY_KEY_SECRET")
     )
 
 
