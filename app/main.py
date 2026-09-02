@@ -195,3 +195,68 @@ def agent_chat(request: AgentChatRequest) -> AgentChatResponse:
             tool_calls_made=0,
             tool_call_log=[],
         )
+
+
+# ---------------------------------------------------------------------------
+# Dashboard read-only endpoints
+# ---------------------------------------------------------------------------
+
+@app.get("/dashboard/cart/{cart_id}")
+def dashboard_get_cart(cart_id: str, response: Response):
+    """Read-only cart retrieval for dashboard."""
+    from app.database import fetch_cart
+    cart = fetch_cart(cart_id)
+    if not cart:
+        response.status_code = 404
+        return {"success": False, "error": "Cart not found"}
+    return {"success": True, "data": cart.model_dump()}
+
+
+@app.get("/dashboard/order/{order_id}")
+def dashboard_get_order(order_id: str, response: Response):
+    """Read-only order retrieval for dashboard."""
+    from app.database import fetch_order
+    order = fetch_order(order_id)
+    if not order:
+        response.status_code = 404
+        return {"success": False, "error": "Order not found"}
+    return {"success": True, "data": order.model_dump()}
+
+
+@app.get("/dashboard/audit")
+def dashboard_get_audit(limit: int = 50):
+    """Read-only audit trail for dashboard."""
+    from app.audit import AuditLogger
+    logger = AuditLogger()
+    entries = logger.get_recent(limit=limit)
+    return {
+        "success": True,
+        "data": [
+            {
+                "id": e.id,
+                "timestamp": e.timestamp,
+                "actor": e.actor,
+                "action": e.action,
+                "policy_decision": e.policy_decision,
+                "reason": e.reason,
+                "success": e.success,
+                "error_code": e.error_code,
+            }
+            for e in entries
+        ]
+    }
+
+
+@app.get("/dashboard/guardrails")
+def dashboard_get_guardrails():
+    """Read-only guardrail policy configuration for dashboard."""
+    from app.guardrails import default_policy
+    return {
+        "success": True,
+        "data": {
+            "max_order_value": default_policy.max_order_value,
+            "max_item_quantity": default_policy.max_quantity_per_item,
+            "allowed_categories": default_policy.allowed_categories,
+            "require_payment_confirmation": default_policy.require_payment_confirmation,
+        }
+    }
