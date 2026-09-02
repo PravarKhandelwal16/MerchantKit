@@ -51,6 +51,69 @@ def api_execute_tool(request: ToolExecutionRequest, response: Response):
     return result
 
 
+class InitiatePaymentRequest(BaseModel):
+    order_id: str = Field(..., min_length=1, description="Internal order ID to initiate payment for")
+
+
+@app.post("/payment/initiate")
+def api_initiate_payment(request: InitiatePaymentRequest, response: Response):
+    """
+    Initiate checkout payment for a pending order.
+    Designed for frontend checkout flow, returning safe data without secrets.
+    """
+    from app.payment import RazorpayPaymentService, PaymentStateError
+    
+    try:
+        service = RazorpayPaymentService()
+        result = service.initiate_checkout_payment(request.order_id)
+        return result
+    except PaymentStateError as e:
+        response.status_code = 400
+        return {"success": False, "error": str(e)}
+    except ValueError as e:
+        response.status_code = 404
+        return {"success": False, "error": str(e)}
+    except Exception as e:
+        response.status_code = 500
+        return {"success": False, "error": "Internal server error during payment initiation"}
+
+
+class VerifyPaymentRequest(BaseModel):
+    razorpay_payment_id: str = Field(..., description="The Razorpay payment ID")
+    razorpay_order_id: str = Field(..., description="The Razorpay order ID")
+    razorpay_signature: str = Field(..., description="The Razorpay signature")
+
+
+@app.post("/payment/verify")
+def api_verify_payment(request: VerifyPaymentRequest, response: Response):
+    """
+    Verify payment signature from Razorpay.
+    Transitions payment to PAID if valid.
+    """
+    from app.payment import RazorpayPaymentService, PaymentStateError, PaymentProviderError
+    
+    try:
+        service = RazorpayPaymentService()
+        result = service.verify_payment_signature(
+            razorpay_payment_id=request.razorpay_payment_id,
+            razorpay_order_id=request.razorpay_order_id,
+            razorpay_signature=request.razorpay_signature
+        )
+        return result
+    except PaymentStateError as e:
+        response.status_code = 400
+        return {"success": False, "error": str(e)}
+    except PaymentProviderError as e:
+        response.status_code = 400
+        return {"success": False, "error": str(e)}
+    except ValueError as e:
+        response.status_code = 404
+        return {"success": False, "error": str(e)}
+    except Exception as e:
+        response.status_code = 500
+        return {"success": False, "error": "Internal server error during payment verification"}
+
+
 # ---------------------------------------------------------------------------
 # Agent Chat endpoint
 # ---------------------------------------------------------------------------

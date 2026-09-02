@@ -177,3 +177,190 @@ def test_failed_payment_is_audited():
         entry = audit.get_by_action("create_payment_order")[0]
         assert entry.success is False
         assert entry.error_code == "EXECUTION_ERROR"
+
+def test_initiate_payment_success():
+    from app.payment import RazorpayPaymentService, PAYMENT_INITIATED
+    order = setup_order()
+    
+    with patch("app.payment.razorpay.Client") as mock_client_class:
+        mock_client = MagicMock()
+        mock_client_class.return_value = mock_client
+        mock_client.order.create.return_value = {"id": "order_rzp_initiate"}
+        
+        service = RazorpayPaymentService()
+        service.create_payment_order(order.order_id)
+        
+        result = service.initiate_checkout_payment(order.order_id)
+        
+        assert result["razorpay_order_id"] == "order_rzp_initiate"
+        assert result["payment_status"] == PAYMENT_INITIATED
+        assert result["amount"] == 89900
+        assert result["razorpay_key_id"] == "rzp_test_mock_id"
+        assert "razorpay_key_secret" not in result
+        
+        # Verify Audit
+        audit = AuditLogger()
+        entry = audit.get_by_action("initiate_payment")[0]
+        assert entry.success is True
+        assert entry.result["payment_status"] == PAYMENT_INITIATED
+
+
+def test_initiate_payment_invalid_transition():
+    from app.payment import RazorpayPaymentService, PaymentStateError
+    order = setup_order()
+    
+    service = RazorpayPaymentService()
+    # order is currently NOT_CREATED
+    
+    with pytest.raises(PaymentStateError) as exc_info:
+        service.initiate_checkout_payment(order.order_id)
+        
+    assert "Invalid state transition" in str(exc_info.value)
+    
+    # Verify Audit
+    audit = AuditLogger()
+    entry = audit.get_by_action("initiate_payment")[0]
+    assert entry.success is False
+    assert entry.error_code == "INVALID_TRANSITION"
+
+
+def test_ai_cannot_mark_paid():
+    # Ensure there is no tool in TOOLS for marking paid
+    from app.tools import TOOLS
+    for tool_name, tool_def in TOOLS.items():
+        assert "paid" not in tool_name.lower()
+        # Ensure 'paid', 'payment_status', etc., are not in the tool schemas
+        schema_fields = tool_def.input_schema.model_fields.keys()
+        assert "paid" not in schema_fields
+        assert "payment_status" not in schema_fields
+
+
+def test_verify_payment_success():
+    from app.payment import RazorpayPaymentService, PAYMENT_INITIATED, PAID
+    from app.database import update_payment_details
+    order = setup_order()
+    
+    # Mocking order to PAYMENT_INITIATED
+    update_payment_details(order.order_id, "razorpay", "order_rzp_mock", PAYMENT_INITIATED)
+    
+    with patch("app.payment.razorpay.Client") as mock_client_class:
+        mock_client = MagicMock()
+        mock_client_class.return_value = mock_client
+        # Verification succeeds (does not raise)
+        mock_client.utility.verify_payment_signature.return_value = True
+        
+        service = RazorpayPaymentService()
+        result = service.verify_payment_signature(
+            razorpay_payment_id="pay_mock_id",
+            razorpay_order_id="order_rzp_mock",
+            razorpay_signature="mock_signature"
+        )
+        
+        assert result["success"] is True
+        assert result["payment_status"] == PAID
+        
+        audit = AuditLogger()
+        entry = audit.get_by_action("verify_payment")[0]
+        assert entry.success is True
+        assert entry.result["payment_status"] == PAID
+
+
+def test_verify_payment_invalid_signature():
+    from app.payment import RazorpayPaymentService, PAYMENT_INITIATED, PaymentProviderError
+    from app.database import update_payment_details
+    import razorpay
+    
+    order = setup_order()
+    update_payment_details(order.order_id, "razorpay", "order_rzp_mock", PAYMENT_INITIATED)
+    
+    with patch("app.payment.razorpay.Client") as mock_client_class:
+        mock_client = MagicMock()
+        mock_client_class.return_value = mock_client
+        mock_client.utility.verify_payment_signature.side_effect = razorpay.errors.SignatureVerificationError("Invalid signature")
+        
+        service = RazorpayPaymentService()
+        
+        with pytest.raises(PaymentProviderError) as exc_info:
+            service.verify_payment_signature(
+                razorpay_payment_id="pay_mock_id",
+                razorpay_order_id="order_rzp_mock",
+                razorpay_signature="invalid_signature"
+            )
+            
+        assert "Signature verification failed" in str(exc_info.value)
+        
+        audit = AuditLogger()
+        entry = audit.get_by_action("verify_payment")[0]
+        assert entry.success is False
+        assert entry.error_code == "INVALID_SIGNATURE"
+
+
+def test_verify_payment_wrong_order_id():
+    from app.payment import RazorpayPaymentService
+    
+    service = RazorpayPaymentService()
+    
+    with pytest.raises(ValueError) as exc_info:
+        service.verify_payment_signature(
+            razorpay_payment_id="pay_mock_id",
+            razorpay_order_id="order_rzp_nonexistent",
+            razorpay_signature="mock_signature"
+        )
+        
+    assert "No internal order found" in str(exc_info.value)
+    
+    audit = AuditLogger()
+    entry = audit.get_by_action("verify_payment")[0]
+    assert entry.success is False
+    assert entry.error_code == "ORDER_NOT_FOUND"
+
+
+def test_verify_payment_from_pending_rejected():
+    from app.payment import RazorpayPaymentService, PENDING, PaymentStateError
+    from app.database import update_payment_details
+    order = setup_order()
+    
+    # State is PENDING (not PAYMENT_INITIATED)
+    update_payment_details(order.order_id, "razorpay", "order_rzp_mock", PENDING)
+    
+    service = RazorpayPaymentService()
+    
+    with pytest.raises(PaymentStateError) as exc_info:
+        service.verify_payment_signature(
+            razorpay_payment_id="pay_mock_id",
+            razorpay_order_id="order_rzp_mock",
+            razorpay_signature="mock_signature"
+        )
+        
+    assert "Cannot verify payment from state PENDING" in str(exc_info.value)
+    
+    audit = AuditLogger()
+    entry = audit.get_by_action("verify_payment")[0]
+    assert entry.success is False
+    assert entry.error_code == "INVALID_STATE"
+
+
+def test_verify_payment_replay_attempt():
+    from app.payment import RazorpayPaymentService, PAID, PaymentStateError
+    from app.database import update_payment_details
+    order = setup_order()
+    
+    # State is already PAID
+    update_payment_details(order.order_id, "razorpay", "order_rzp_mock", PAID)
+    
+    service = RazorpayPaymentService()
+    
+    with pytest.raises(PaymentStateError) as exc_info:
+        service.verify_payment_signature(
+            razorpay_payment_id="pay_mock_id",
+            razorpay_order_id="order_rzp_mock",
+            razorpay_signature="mock_signature"
+        )
+        
+    assert "Payment already verified" in str(exc_info.value)
+    
+    audit = AuditLogger()
+    entry = audit.get_by_action("verify_payment")[0]
+    assert entry.success is False
+    assert entry.error_code == "REPLAY_ATTEMPT"
+

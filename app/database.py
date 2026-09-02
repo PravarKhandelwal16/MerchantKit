@@ -473,3 +473,29 @@ def update_payment_details(order_id: str, provider: str, razorpay_order_id: str,
     finally:
         conn.close()
 
+
+def fetch_order_by_razorpay_order_id(razorpay_order_id: str) -> Optional[Order]:
+    """Fetch an order by its Razorpay order ID."""
+    conn = get_db_connection()
+    try:
+        row = conn.execute(
+            "SELECT order_id, cart_id, total_amount, currency, status, created_at, payment_provider, razorpay_order_id, payment_status FROM orders WHERE razorpay_order_id = ?",
+            (razorpay_order_id,)
+        ).fetchone()
+        
+        if not row:
+            return None
+            
+        order = Order(**dict(row))
+        
+        items_rows = conn.execute(
+            "SELECT order_id, product_id, product_name, quantity, unit_price FROM order_items WHERE order_id = ?",
+            (order.order_id,)
+        ).fetchall()
+        
+        order.items = [OrderItem(**dict(item_row)) for item_row in items_rows]
+        return order
+    finally:
+        conn.close()
+
+
