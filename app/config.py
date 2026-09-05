@@ -16,6 +16,15 @@ class Settings(BaseModel):
     database_url: str = Field(
         default=os.getenv("DATABASE_URL", "sqlite:///./data/gateway.db")
     )
+    llm_provider: str = Field(
+        default=os.getenv("LLM_PROVIDER", "gemini")
+    )
+    gemini_api_key: Optional[str] = Field(
+        default=os.getenv("GEMINI_API_KEY")
+    )
+    gemini_model: str = Field(
+        default=os.getenv("GEMINI_MODEL", "gemini-3.6-flash")
+    )
     ollama_base_url: str = Field(
         default=os.getenv("OLLAMA_BASE_URL", "http://localhost:11434")
     )

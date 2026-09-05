@@ -179,6 +179,7 @@ def _history_to_messages(history: List[Dict[str, Any]]) -> List[LLMMessage]:
             role=entry.get("role", "user"),
             content=entry.get("content", ""),
             tool_calls=entry.get("tool_calls"),
+            name=entry.get("name"),
         )
         for entry in history
     ]

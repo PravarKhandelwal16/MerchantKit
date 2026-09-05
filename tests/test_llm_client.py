@@ -12,6 +12,10 @@ from app.llm import LLMMessage, LLMResponse, send_message, check_ollama_health
 # Helpers
 # ---------------------------------------------------------------------------
 
+@pytest.fixture(autouse=True)
+def _set_ollama_provider(monkeypatch):
+    monkeypatch.setattr("app.config.settings.llm_provider", "ollama")
+
 def _mock_post(monkeypatch, status_code: int, json_body: dict):
     """Patch httpx.post to return a controlled Response."""
     mock_response = MagicMock(spec=httpx.Response)

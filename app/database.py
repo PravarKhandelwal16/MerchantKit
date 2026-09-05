@@ -305,11 +305,18 @@ def fetch_cart(cart_id: str) -> Optional[Cart]:
         cart = Cart(**dict(row))
         
         items_rows = conn.execute(
-            "SELECT product_id, quantity, unit_price FROM cart_items WHERE cart_id = ?",
+            """
+            SELECT ci.product_id, ci.quantity, ci.unit_price, p.name AS product_name
+            FROM cart_items ci
+            LEFT JOIN products p ON ci.product_id = p.product_id
+            WHERE ci.cart_id = ?
+            """,
             (cart_id,)
         ).fetchall()
         
         cart.items = [CartItem(**dict(item_row)) for item_row in items_rows]
+        cart.subtotal = sum(item.quantity * item.unit_price for item in cart.items)
+        cart.total_quantity = sum(item.quantity for item in cart.items)
         return cart
     finally:
         conn.close()
@@ -470,6 +477,74 @@ def update_payment_details(order_id: str, provider: str, razorpay_order_id: str,
             (provider, razorpay_order_id, payment_status, order_id)
         )
         conn.commit()
+    finally:
+        conn.close()
+
+
+def update_order_payment_status(order_id: str, provider: str, razorpay_order_id: str, payment_status: str) -> None:
+    """Update payment information on an order."""
+    conn = get_db_connection()
+    try:
+        conn.execute(
+            """
+            UPDATE orders 
+            SET payment_provider = ?,
+                razorpay_order_id = ?,
+                payment_status = ?
+            WHERE order_id = ?
+            """,
+            (provider, razorpay_order_id, payment_status, order_id)
+        )
+        conn.commit()
+    finally:
+        conn.close()
+
+def list_carts(limit: int = 50) -> List[Cart]:
+    """Retrieve recent carts."""
+    conn = get_db_connection()
+    try:
+        rows = conn.execute(
+            "SELECT cart_id, status, created_at, updated_at FROM carts ORDER BY created_at DESC LIMIT ?",
+            (limit,)
+        ).fetchall()
+        carts = []
+        for row in rows:
+            cart = Cart(**dict(row))
+            items_rows = conn.execute(
+                """
+                SELECT ci.product_id, ci.quantity, ci.unit_price, p.name AS product_name
+                FROM cart_items ci
+                LEFT JOIN products p ON ci.product_id = p.product_id
+                WHERE ci.cart_id = ?
+                """,
+                (cart.cart_id,)
+            ).fetchall()
+            cart.items = [CartItem(**dict(item_row)) for item_row in items_rows]
+            cart.subtotal = sum(item.quantity * item.unit_price for item in cart.items)
+            cart.total_quantity = sum(item.quantity for item in cart.items)
+            carts.append(cart)
+        return carts
+    finally:
+        conn.close()
+
+def list_orders(limit: int = 50) -> List[Order]:
+    """Retrieve recent orders."""
+    conn = get_db_connection()
+    try:
+        rows = conn.execute(
+            "SELECT order_id, cart_id, total_amount, currency, status, created_at, payment_provider, razorpay_order_id, payment_status FROM orders ORDER BY created_at DESC LIMIT ?",
+            (limit,)
+        ).fetchall()
+        orders = []
+        for row in rows:
+            order = Order(**dict(row))
+            items_rows = conn.execute(
+                "SELECT order_id, product_id, product_name, quantity, unit_price FROM order_items WHERE order_id = ?",
+                (order.order_id,)
+            ).fetchall()
+            order.items = [OrderItem(**dict(item_row)) for item_row in items_rows]
+            orders.append(order)
+        return orders
     finally:
         conn.close()
 

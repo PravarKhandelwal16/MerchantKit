@@ -1,5 +1,7 @@
 # Environments & Secrets
 .env
+.env.*
+!.env.example
 .venv/
 venv/
 ENV/
@@ -9,6 +11,14 @@ __pycache__/
 *.py[cod]
 *$py.class
 .pytest_cache/
+
+# Node & Frontend
+node_modules/
+dist/
+dist-ssr/
+*.local
+*.tsbuildinfo
+.npm/
 
 # Database files
 *.db

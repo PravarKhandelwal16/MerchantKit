@@ -25,6 +25,10 @@ from app.llm import send_message, LLMMessage
 # Helpers
 # ---------------------------------------------------------------------------
 
+@pytest.fixture(autouse=True)
+def _set_ollama_provider(monkeypatch):
+    monkeypatch.setattr("app.config.settings.llm_provider", "ollama")
+
 def _make_post_mock(monkeypatch, status_code: int, json_body: dict):
     mock_response = MagicMock(spec=httpx.Response)
     mock_response.status_code = status_code

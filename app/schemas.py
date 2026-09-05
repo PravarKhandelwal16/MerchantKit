@@ -16,6 +16,7 @@ class CartItem(BaseModel):
     product_id: str = Field(..., min_length=1)
     quantity: int = Field(..., ge=1)
     unit_price: float = Field(..., ge=0)
+    product_name: Optional[str] = None
 
 
 class Cart(BaseModel):

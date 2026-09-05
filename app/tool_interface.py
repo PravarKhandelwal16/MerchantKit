@@ -110,6 +110,26 @@ def build_ollama_tools() -> List[Dict[str, Any]]:
     return result
 
 
+def build_gemini_tools() -> List[Any]:
+    """
+    Convert all registered ToolDefinitions into Google GenAI Tool format.
+
+    The existing TOOLS registry remains the single source of truth.
+    """
+    from google.genai import types
+    declarations = []
+    for tool_def in TOOLS.values():
+        schema = _pydantic_to_json_schema(tool_def.input_schema)
+        declarations.append(
+            types.FunctionDeclaration(
+                name=tool_def.name,
+                description=tool_def.description,
+                parameters=schema,
+            )
+        )
+    return [types.Tool(function_declarations=declarations)]
+
+
 # ---------------------------------------------------------------------------
 # Dataclasses for tool-call parsing
 # ---------------------------------------------------------------------------
@@ -249,4 +269,4 @@ def format_tool_result_message(result: ToolCallResult) -> Dict[str, Any]:
     except Exception:
         content = json.dumps({"success": False, "error": "Could not serialise tool result."})
 
-    return {"role": "tool", "content": content}
+    return {"role": "tool", "name": result.tool_name, "content": content}

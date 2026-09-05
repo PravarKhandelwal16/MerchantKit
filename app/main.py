@@ -1,6 +1,7 @@
 from typing import Dict, Any, List, Optional
 from contextlib import asynccontextmanager
 from fastapi import FastAPI, Response
+from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel, Field
 from app.config import settings
 from app.database import init_db
@@ -22,6 +23,15 @@ app = FastAPI(
     lifespan=lifespan,
 )
 
+# Allow React dev server (localhost:5173) to call the API.
+# Only this specific origin is whitelisted — no wildcard.
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=["http://localhost:5173"],
+    allow_methods=["GET", "POST"],
+    allow_headers=["Content-Type"],
+)
+
 
 class ToolExecutionRequest(BaseModel):
     tool: str = Field(..., description="Name of the tool to execute")
@@ -32,6 +42,13 @@ class ToolExecutionRequest(BaseModel):
 def health_check() -> Dict[str, str]:
     """Health check endpoint."""
     return {"status": "ok"}
+
+
+@app.get("/health/llm")
+def llm_health_check() -> Dict[str, Any]:
+    """Health check for configured LLM provider and model."""
+    from app.llm import check_llm_health
+    return check_llm_health()
 
 
 @app.post("/tools/execute")
@@ -128,18 +145,25 @@ class ToolCallSummary(BaseModel):
     error: Optional[str] = None
 
 
+class SessionData(BaseModel):
+    cart_id: Optional[str] = None
+    order_id: Optional[str] = None
+
+
 class AgentChatResponse(BaseModel):
     success: bool
     message: str
     stop_reason: str
     tool_calls_made: int
     tool_call_log: List[ToolCallSummary]
+    session_data: SessionData = SessionData()
 
 
-def _build_tool_call_log(history: list) -> List[ToolCallSummary]:
-    """Extract a structured tool-call summary from the agent history."""
+def _build_tool_call_log(history: list) -> tuple[List[ToolCallSummary], SessionData]:
+    """Extract a structured tool-call summary and session data from the agent history."""
     import json
     log: List[ToolCallSummary] = []
+    session = SessionData()
     # Pair each assistant turn (with tool_calls) with the following tool result messages
     i = 0
     while i < len(history):
@@ -152,18 +176,31 @@ def _build_tool_call_log(history: list) -> List[ToolCallSummary]:
                 if i < len(history) and history[i].get("role") == "tool":
                     try:
                         result = json.loads(history[i]["content"])
+                        success = result.get("success", False)
                         log.append(ToolCallSummary(
                             tool_name=tool_name,
-                            success=result.get("success", False),
+                            success=success,
                             error=result.get("error"),
                         ))
+                        # Extract session identifiers from successful tool results
+                        if success:
+                            data = result.get("data") or {}
+                            if isinstance(data, dict):
+                                if tool_name in ("create_cart", "add_to_cart", "get_cart", "update_cart_item", "remove_from_cart"):
+                                    cid = data.get("cart_id")
+                                    if cid:
+                                        session.cart_id = cid
+                                elif tool_name in ("create_order", "get_order"):
+                                    oid = data.get("order_id")
+                                    if oid:
+                                        session.order_id = oid
                     except Exception:
                         log.append(ToolCallSummary(tool_name=tool_name, success=False, error="Could not parse result"))
                 else:
                     log.append(ToolCallSummary(tool_name=tool_name, success=False, error="No result received"))
                     i -= 1  # didn't consume a tool message, stay
         i += 1
-    return log
+    return log, session
 
 
 @app.post("/agent/chat", response_model=AgentChatResponse)
@@ -178,13 +215,14 @@ def agent_chat(request: AgentChatRequest) -> AgentChatResponse:
     try:
         agent = BuyerAgent()
         result: AgentResult = agent.run(request.message)
-        tool_log = _build_tool_call_log(result.history)
+        tool_log, session = _build_tool_call_log(result.history)
         return AgentChatResponse(
             success=result.success,
             message=result.final_response,
             stop_reason=result.stop_reason,
             tool_calls_made=result.tool_calls_made,
             tool_call_log=tool_log,
+            session_data=session,
         )
     except Exception:
         # Never expose stack traces to the client
@@ -194,12 +232,46 @@ def agent_chat(request: AgentChatRequest) -> AgentChatResponse:
             stop_reason="error",
             tool_calls_made=0,
             tool_call_log=[],
+            session_data=SessionData(),
         )
 
 
 # ---------------------------------------------------------------------------
 # Dashboard read-only endpoints
 # ---------------------------------------------------------------------------
+
+@app.get("/dashboard/products")
+def dashboard_get_products():
+    """Read-only product catalog retrieval for dashboard."""
+    from app.database import list_products
+    products = list_products()
+    return {
+        "success": True,
+        "data": [p.model_dump() for p in products]
+    }
+
+
+@app.get("/dashboard/carts")
+def dashboard_get_carts(limit: int = 50):
+    """Read-only carts retrieval for dashboard."""
+    from app.database import list_carts
+    carts = list_carts(limit=limit)
+    return {
+        "success": True,
+        "data": [c.model_dump() for c in carts]
+    }
+
+
+@app.get("/dashboard/orders")
+def dashboard_get_orders(limit: int = 50):
+    """Read-only orders retrieval for dashboard."""
+    from app.database import list_orders
+    orders = list_orders(limit=limit)
+    return {
+        "success": True,
+        "data": [o.model_dump() for o in orders]
+    }
+
 
 @app.get("/dashboard/cart/{cart_id}")
 def dashboard_get_cart(cart_id: str, response: Response):
@@ -241,8 +313,26 @@ def dashboard_get_audit(limit: int = 50):
                 "reason": e.reason,
                 "success": e.success,
                 "error_code": e.error_code,
+                "arguments": e.arguments,
+                "result": e.result,
             }
             for e in entries
+        ]
+    }
+
+
+@app.get("/dashboard/tools")
+def dashboard_get_tools():
+    """Read-only list of registered and allowed tools for dashboard."""
+    from app.tools import TOOLS
+    return {
+        "success": True,
+        "data": [
+            {
+                "name": tool.name,
+                "description": tool.description,
+            }
+            for tool in TOOLS.values()
         ]
     }
 
@@ -260,3 +350,30 @@ def dashboard_get_guardrails():
             "require_payment_confirmation": default_policy.require_payment_confirmation,
         }
     }
+
+
+@app.get("/dashboard/session")
+def dashboard_get_session():
+    """
+    Read-only endpoint returning the most recently created cart and order IDs.
+    Used by the dashboard to auto-populate Commerce/Payment sections after an
+    agent interaction without requiring the user to manually type IDs.
+    """
+    from app.database import get_db_connection
+    conn = get_db_connection()
+    try:
+        cart_row = conn.execute(
+            "SELECT cart_id FROM carts ORDER BY created_at DESC LIMIT 1"
+        ).fetchone()
+        order_row = conn.execute(
+            "SELECT order_id FROM orders ORDER BY created_at DESC LIMIT 1"
+        ).fetchone()
+        return {
+            "success": True,
+            "data": {
+                "cart_id": cart_row["cart_id"] if cart_row else None,
+                "order_id": order_row["order_id"] if order_row else None,
+            }
+        }
+    finally:
+        conn.close()
