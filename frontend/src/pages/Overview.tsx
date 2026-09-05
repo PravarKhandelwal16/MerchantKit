@@ -15,7 +15,9 @@ export function Overview() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
-  useEffect(() => {
+  const fetchActivity = () => {
+    setLoading(true);
+    setError(null);
     getAuditTrail(8)
       .then((res) => {
         if (res.success && res.data) setEntries(res.data);
@@ -23,6 +25,10 @@ export function Overview() {
       })
       .catch((e: Error) => setError(e.message))
       .finally(() => setLoading(false));
+  };
+
+  useEffect(() => {
+    fetchActivity();
   }, []);
 
   return (
@@ -53,7 +59,17 @@ export function Overview() {
       </p>
 
       {loading && <p className="text-sm text-slate-400">Loading…</p>}
-      {error && <p className="text-sm text-red-600">{error}</p>}
+      {error && (
+        <div className="flex items-center gap-3">
+          <p className="text-sm text-red-600">{error}</p>
+          <button
+            onClick={fetchActivity}
+            className="rounded border border-slate-300 bg-white px-2.5 py-1 text-xs font-medium text-slate-700 hover:bg-slate-50 cursor-pointer"
+          >
+            Retry
+          </button>
+        </div>
+      )}
 
       {!loading && !error && entries.length === 0 && (
         <EmptyState

@@ -31,7 +31,7 @@ function classifyError(err: unknown): string {
     return 'The AI request took too long. The local model may still be processing — please wait a moment and try again.';
   }
   if (msg.includes('HTTP 5') || msg.includes('500') || msg.includes('502') || msg.includes('503')) {
-    return 'AI Agent is currently unavailable. Please check that Ollama is running.';
+    return 'AI service is temporarily unavailable. Please try again later.';
   }
   if (msg.includes('HTTP 4')) {
     return 'The request was rejected by the backend. Please check your input and try again.';
@@ -127,7 +127,7 @@ export function AiBuyer({ onSessionUpdate }: AiBuyerProps) {
               </button>
               {loading && (
                 <span className="text-xs text-slate-400">
-                  Agent is processing request… (may take 1–2 min on local inference)
+                  Agent is processing request…
                 </span>
               )}
             </div>

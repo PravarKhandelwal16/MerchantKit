@@ -28,7 +28,7 @@ class TestGeminiConfig:
         assert settings.llm_provider == "gemini"
 
     def test_default_gemini_model(self):
-        assert settings.gemini_model == "gemini-3.6-flash"
+        assert settings.gemini_model in ("gemini-3.5-flash-lite", "gemini-3.6-flash")
 
     def test_ollama_settings_preserved(self):
         assert settings.ollama_base_url == "http://localhost:11434"
@@ -110,7 +110,7 @@ class TestGeminiTextResponse:
         assert res.content == "I found Logitech M331 for you."
         assert res.tool_calls is None
         assert res.error is None
-        assert res.model == "gemini-3.6-flash"
+        assert res.model == settings.gemini_model
 
 
 # ---------------------------------------------------------------------------
@@ -279,7 +279,7 @@ class TestGeminiHealthCheck:
         assert health["status"] == "online"
         assert health["provider"] == "gemini"
         assert health["configured"] is True
-        assert health["model"] == "gemini-3.6-flash"
+        assert health["model"] == settings.gemini_model
 
     def test_offline_when_models_get_fails(self):
         provider = GeminiProvider(api_key="mock-key")

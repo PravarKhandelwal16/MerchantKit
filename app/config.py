@@ -23,7 +23,7 @@ class Settings(BaseModel):
         default=os.getenv("GEMINI_API_KEY")
     )
     gemini_model: str = Field(
-        default=os.getenv("GEMINI_MODEL", "gemini-3.6-flash")
+        default=os.getenv("GEMINI_MODEL", "gemini-3.5-flash-lite")
     )
     ollama_base_url: str = Field(
         default=os.getenv("OLLAMA_BASE_URL", "http://localhost:11434")

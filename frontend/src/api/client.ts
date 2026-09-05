@@ -34,13 +34,15 @@ export async function request<T>(
   const timerId = setTimeout(() => controller.abort(), timeoutMs);
 
   try {
+    const headers: Record<string, string> = {
+      ...(options.body ? { 'Content-Type': 'application/json' } : {}),
+      ...(options.headers as Record<string, string>),
+    };
+
     const response = await fetch(`${BASE_URL}${path}`, {
       ...options,
       signal: controller.signal,
-      headers: {
-        'Content-Type': 'application/json',
-        ...options.headers,
-      },
+      headers,
     });
 
     if (!response.ok) {
@@ -138,6 +140,24 @@ export async function initiatePayment(orderId: string): Promise<PaymentInitiateR
     {
       method: 'POST',
       body: JSON.stringify({ order_id: orderId }),
+    },
+  );
+}
+
+export async function verifyPayment(
+  razorpayPaymentId: string,
+  razorpayOrderId: string,
+  razorpaySignature: string,
+): Promise<ApiResult<unknown>> {
+  return request<ApiResult<unknown>>(
+    '/payment/verify',
+    {
+      method: 'POST',
+      body: JSON.stringify({
+        razorpay_payment_id: razorpayPaymentId,
+        razorpay_order_id: razorpayOrderId,
+        razorpay_signature: razorpaySignature,
+      }),
     },
   );
 }

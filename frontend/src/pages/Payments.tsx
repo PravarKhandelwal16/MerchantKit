@@ -2,11 +2,25 @@ import { useState } from 'react';
 import { PageHeader } from '../components/PageHeader';
 import { StatusBadge } from '../components/StatusBadge';
 import { EmptyState } from '../components/EmptyState';
-import { getOrder, initiatePayment } from '../api/client';
+import { getOrder, initiatePayment, verifyPayment } from '../api/client';
 import type { Order } from '../api/types';
 
 function fmtINR(v: number) {
   return new Intl.NumberFormat('en-IN', { style: 'currency', currency: 'INR' }).format(v);
+}
+
+function loadScript(src: string): Promise<boolean> {
+  return new Promise((resolve) => {
+    const existing = document.querySelector(`script[src="${src}"]`);
+    if (existing) {
+      return resolve(true);
+    }
+    const script = document.createElement('script');
+    script.src = src;
+    script.onload = () => resolve(true);
+    script.onerror = () => resolve(false);
+    document.body.appendChild(script);
+  });
 }
 
 interface PaymentsProps {
@@ -40,17 +54,65 @@ export function Payments({ initialOrderId = '' }: PaymentsProps) {
 
   async function handleInitiatePayment() {
     if (!orderId.trim()) return;
+
+    const scriptLoaded = await loadScript('https://checkout.razorpay.com/v1/checkout.js');
+    if (!scriptLoaded) {
+      setPaymentErr('Failed to load Razorpay SDK. Please check your network connection.');
+      return;
+    }
+
     setPaymentLoading(true);
     setPaymentErr(null);
     setPaymentMsg(null);
     try {
       const res = await initiatePayment(orderId.trim());
-      if (res.success) {
-        setPaymentMsg('Payment initiated. Status updated to PAYMENT_INITIATED.');
-        // Reload order to show updated state
-        loadOrder();
+      if (res.success && res.razorpay_key_id && res.razorpay_order_id) {
+        setPaymentMsg('Payment initiated. Waiting for checkout completion...');
+        
+        const options = {
+          key: res.razorpay_key_id,
+          amount: res.amount,
+          currency: res.currency,
+          name: 'MerchantKit',
+          description: `Order ${res.internal_order_reference}`,
+          order_id: res.razorpay_order_id,
+          handler: async function (response: any) {
+            setPaymentMsg('Verifying payment signature with backend...');
+            try {
+              const verifyRes = await verifyPayment(
+                response.razorpay_payment_id,
+                response.razorpay_order_id,
+                response.razorpay_signature
+              );
+              if (verifyRes.success) {
+                setPaymentMsg('Payment verified successfully!');
+                loadOrder();
+              } else {
+                setPaymentErr(verifyRes.error ?? 'Payment verification failed.');
+              }
+            } catch (err) {
+              setPaymentErr(err instanceof Error ? err.message : 'Payment verification failed.');
+            }
+          },
+          prefill: {
+            name: 'Demo User',
+            email: 'user@example.com',
+            contact: '9999999999'
+          },
+          theme: {
+            color: '#2563eb' // Tailwind blue-600
+          }
+        };
+
+        const rzp = new (window as any).Razorpay(options);
+        rzp.on('payment.failed', function (response: any) {
+          setPaymentErr(`Payment failed: ${response.error.description}`);
+          setPaymentMsg(null);
+        });
+        rzp.open();
       } else {
-        setPaymentErr(res.error ?? 'Payment initiation failed.');
+        setPaymentErr(res.error ?? 'Payment initiation failed. Missing configuration.');
+        loadOrder();
       }
     } catch (err) {
       setPaymentErr(err instanceof Error ? err.message : 'Payment initiation failed.');
@@ -114,23 +176,19 @@ export function Payments({ initialOrderId = '' }: PaymentsProps) {
           </div>
 
           {/* Actions by state */}
-          {pStatus === 'PENDING' && (
+          {(pStatus === 'PENDING' || pStatus === 'NOT_CREATED') && (
             <div className="mb-4">
               <p className="mb-2 text-xs text-slate-500">
-                The AI prepared the order. Initiating payment requires explicit user action.
+                Order is ready for checkout. Initiating payment requires explicit user confirmation.
               </p>
               <button
                 onClick={handleInitiatePayment}
                 disabled={paymentLoading}
                 className="rounded bg-blue-600 px-4 py-2 text-sm font-medium text-white hover:bg-blue-700 disabled:opacity-50"
               >
-                {paymentLoading ? 'Initiating…' : 'Initiate Payment →'}
+                {paymentLoading ? 'Initiating…' : 'Pay with Razorpay →'}
               </button>
             </div>
-          )}
-
-          {pStatus === 'NOT_CREATED' && (
-            <p className="text-sm text-slate-500">Create an order in Commerce to enable payment.</p>
           )}
           {pStatus === 'PAYMENT_INITIATED' && (
             <p className="text-sm text-slate-600">Payment has been initiated. Complete the Razorpay checkout to confirm.</p>

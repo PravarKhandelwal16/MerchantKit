@@ -133,6 +133,8 @@ export interface PaymentInitiateResponse {
   success: boolean;
   order_id?: string;
   razorpay_order_id?: string;
+  razorpay_key_id?: string;
+  internal_order_reference?: string;
   amount?: number;
   currency?: string;
   payment_status?: string;

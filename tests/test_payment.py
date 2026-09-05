@@ -364,3 +364,52 @@ def test_verify_payment_replay_attempt():
     assert entry.success is False
     assert entry.error_code == "REPLAY_ATTEMPT"
 
+
+def test_api_payment_initiate_flow():
+    from fastapi.testclient import TestClient
+    from app.main import app
+    client = TestClient(app)
+    order = setup_order()
+
+    with patch("app.payment.razorpay.Client") as mock_client_class:
+        mock_client = MagicMock()
+        mock_client_class.return_value = mock_client
+        mock_client.order.create.return_value = {"id": "order_rzp_endpoint"}
+
+        response = client.post("/payment/initiate", json={"order_id": order.order_id})
+        assert response.status_code == 200
+        data = response.json()
+        assert data["success"] is True
+        assert data["razorpay_order_id"] == "order_rzp_endpoint"
+        assert data["razorpay_key_id"] == "rzp_test_mock_id"
+        assert "razorpay_key_secret" not in data
+
+
+def test_api_payment_verify_flow():
+    from fastapi.testclient import TestClient
+    from app.main import app
+    from app.payment import PAYMENT_INITIATED
+    from app.database import update_payment_details
+    client = TestClient(app)
+    order = setup_order()
+    update_payment_details(order.order_id, "razorpay", "order_rzp_endpoint", PAYMENT_INITIATED)
+
+    with patch("app.payment.razorpay.Client") as mock_client_class:
+        mock_client = MagicMock()
+        mock_client_class.return_value = mock_client
+        mock_client.utility.verify_payment_signature.return_value = True
+
+        response = client.post(
+            "/payment/verify",
+            json={
+                "razorpay_payment_id": "pay_mock_123",
+                "razorpay_order_id": "order_rzp_endpoint",
+                "razorpay_signature": "valid_signature",
+            },
+        )
+        assert response.status_code == 200
+        data = response.json()
+        assert data["success"] is True
+        assert data["payment_status"] == "PAID"
+
+

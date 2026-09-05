@@ -23,13 +23,21 @@ app = FastAPI(
     lifespan=lifespan,
 )
 
-# Allow React dev server (localhost:5173) to call the API.
-# Only this specific origin is whitelisted — no wildcard.
+# Allow React dev server (any port on localhost or 127.0.0.1) to call the API.
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["http://localhost:5173"],
-    allow_methods=["GET", "POST"],
-    allow_headers=["Content-Type"],
+    allow_origins=[
+        "http://localhost:5173",
+        "http://127.0.0.1:5173",
+        "http://localhost:5174",
+        "http://127.0.0.1:5174",
+        "http://localhost:3000",
+        "http://127.0.0.1:3000",
+    ],
+    allow_origin_regex=r"^https?://(localhost|127\.0\.0\.1|\[::1\])(:\d+)?$",
+    allow_credentials=True,
+    allow_methods=["*"],
+    allow_headers=["*"],
 )
 
 
@@ -75,14 +83,26 @@ class InitiatePaymentRequest(BaseModel):
 @app.post("/payment/initiate")
 def api_initiate_payment(request: InitiatePaymentRequest, response: Response):
     """
-    Initiate checkout payment for a pending order.
-    Designed for frontend checkout flow, returning safe data without secrets.
+    Initiate checkout payment for an order.
+    If the Razorpay payment order does not exist yet (NOT_CREATED), it creates it first,
+    then transitions to PAYMENT_INITIATED and returns safe checkout data without secrets.
     """
-    from app.payment import RazorpayPaymentService, PaymentStateError
+    from app.payment import RazorpayPaymentService, PaymentStateError, NOT_CREATED
+    from app.database import fetch_order
     
     try:
         service = RazorpayPaymentService()
+        order = fetch_order(request.order_id)
+        if not order:
+            response.status_code = 404
+            return {"success": False, "error": f"Order '{request.order_id}' not found."}
+            
+        current_status = order.payment_status or NOT_CREATED
+        if current_status == NOT_CREATED:
+            service.create_payment_order(request.order_id)
+
         result = service.initiate_checkout_payment(request.order_id)
+        result["success"] = True
         return result
     except PaymentStateError as e:
         response.status_code = 400

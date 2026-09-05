@@ -1,37 +1,32 @@
-"""Diagnostic script to verify Ollama reachability, model availability, and a test chat call."""
-from app.llm import check_ollama_health, send_message, LLMMessage
+"""Diagnostic script to verify active LLM provider reachability, configuration, and a test chat call."""
+from app.llm import check_llm_health, send_message, LLMMessage
 from app.config import settings
 
 
 def main():
     print("=" * 60)
-    print("OLLAMA & LOCAL LLM DIAGNOSTIC")
+    print("MERCHANTKIT — LLM PROVIDER DIAGNOSTIC")
     print("=" * 60)
-    print(f"Target Base URL     : {settings.ollama_base_url}")
-    print(f"Configured Model    : {settings.ollama_model}")
+    print(f"Active Provider     : {settings.llm_provider.upper()}")
+    if settings.llm_provider == "gemini":
+        print(f"Configured Model    : {settings.gemini_model}")
+        print(f"API Key Present     : {'YES' if bool(settings.gemini_api_key) else 'NO'}")
+    else:
+        print(f"Target Base URL     : {settings.ollama_base_url}")
+        print(f"Configured Model    : {settings.ollama_model}")
     print("-" * 60)
 
-    result = check_ollama_health()
-
-    print(f"Ollama Reachable    : {'YES' if result['reachable'] else 'NO'}")
-    print(f"Model Available     : {'YES' if result['model_available'] else 'NO'}")
-
-    if result["available_models"]:
-        print(f"Installed Models    : {', '.join(result['available_models'])}")
-    else:
-        print("Installed Models    : None detected")
-
-    if result["error"]:
-        print(f"Details / Error     : {result['error']}")
-
+    result = check_llm_health()
+    print(f"Health Status       : {result.get('status', 'unknown').upper()}")
+    print(f"Provider Details    : {result}")
     print("-" * 60)
     print("CHAT PROBE")
     print("-" * 60)
 
-    if result["reachable"] and result["model_available"]:
+    if result.get("status") == "online":
         probe = send_message(
             [LLMMessage(role="user", content="Reply with exactly: OK")],
-            timeout=180.0,
+            timeout=30.0,
         )
         if probe.success:
             print(f"Chat Response       : {probe.content.strip()}")
@@ -39,10 +34,11 @@ def main():
         else:
             print(f"Chat Error          : {probe.error}")
     else:
-        print("Chat Probe          : Skipped (Ollama not reachable or model missing)")
+        print("Chat Probe          : Skipped (Provider not online)")
 
     print("=" * 60)
 
 
 if __name__ == "__main__":
     main()
+
